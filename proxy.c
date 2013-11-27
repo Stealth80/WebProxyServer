@@ -1,9 +1,9 @@
 /*
  * proxy.c - CS:APP Web proxy
  *
- * TEAM MEMBERS: (put your names here)
- *     Student Name1, student1@cs.uky.edu 
- *     Student Name2, student2@cs.uky.edu 
+ * TEAM MEMBERS: 
+ *     Nick Hollis, nick.hollis@uky.edu 
+ *     Josh Tuschl, student2@cs.uky.edu 
  * 
  * IMPORTANT: Give a high level description of your code here. You
  * must also provide a header comment at the beginning of each
