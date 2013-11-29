@@ -17,12 +17,19 @@
  */
 int parse_uri(char *uri, char *target_addr, char *path, int  *port);
 void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size);
+void handle_request(int connfd, struct sockaddr_in *sockaddr);
 
 /* 
  * main - Main routine for the proxy program 
  */
 int main(int argc, char **argv)
 {
+	int listenfd, connfd, port, clientlen, serverPort;
+	struct sockaddr_in clientaddr;
+	struct hostent *hp;
+	struct sockaddr_in serveraddr;
+	char *haddrp;
+	unsigned short client_port;
 
     /* Check arguments */
     if (argc != 2) {
@@ -30,10 +37,54 @@ int main(int argc, char **argv)
 	exit(0);
     }
 
-    exit(0);
+	port = atoi(argv[1]);  //listens on port passed on the command line
+	listenfd = open_listenfd(port); 
+
+	while(1) {
+		clientlen = sizeof(clientaddr);
+		connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
+		hp = Gethosebyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clentaddr.sin_addr.s_addr), AF_INET);
+		haddrp = inet_ntoa(clientaddr.sin_addr);
+		client_port = ntohs(clientaddr.sin_port);
+
+		if(fork() == 0) { //if child
+			Close(listenfd); //close listen address
+			handle_request(connfd, &clientaddr); //handle request
+			exit(0);  //on exit will close remaining fd and child ends
+		}
+		else  //if parent
+		{
+			Close(connfd);  //close connection fd
+		}
+	}
+
+    exit(0);   //should never get here
 }
 
 
+void handle_request(int connfd, struct sockaddr_in *sockaddr)
+{
+	int clientfd;
+	stru
+	struct socaddr_in serveraddr;
+
+	parse_uri(&clientaddr, hostname, pathname, serverPort);  //call parse_uri to extract host name, path name, and port
+
+		//check URL against cached URL list
+		if() //if cached already
+		{
+		
+		}
+		else //if not cached already
+		{
+			if((clientfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) //open connection to end server
+				return -1; 
+			if(hostname == NULL)
+			{
+				
+			}
+		}
+}
 /*
  * parse_uri - URI parser
  * 
