@@ -23,12 +23,12 @@ void handle_request(int connfd, struct sockaddr_in *sockaddr);
  * main - Main routine for the proxy program 
  */
 int main(int argc, char **argv)
-{
-	int listenfd, connfd, port, clientlen, serverPort;
+{     
+	int listenfd, connfd, port, clientlen, serverPort; //listenfd for listening descriptor, connfd for connected descriptor
 	struct sockaddr_in clientaddr;
-	struct hostent *hp;
+	struct hostent *hp;	//pointer to DNS host entry
 	struct sockaddr_in serveraddr;
-	char *haddrp;
+	char *haddrp;	//pointer to dotted decimal string
 	unsigned short client_port;
 
     /* Check arguments */
@@ -38,7 +38,7 @@ int main(int argc, char **argv)
     }
 
 	port = atoi(argv[1]);  //listens on port passed on the command line
-	listenfd = open_listenfd(port); 
+	listenfd = open_listenfd(port);   //listening descriptor
 
 	while(1) {
 		clientlen = sizeof(clientaddr);
@@ -48,7 +48,7 @@ int main(int argc, char **argv)
 		client_port = ntohs(clientaddr.sin_port);
 
 		if(fork() == 0) { //if child
-			Close(listenfd); //close listen address
+			Close(listenfd); //close listen socket
 			handle_request(connfd, &clientaddr); //handle request
 			exit(0);  //on exit will close remaining fd and child ends
 		}
@@ -64,26 +64,52 @@ int main(int argc, char **argv)
 
 void handle_request(int connfd, struct sockaddr_in *sockaddr)
 {
-	int clientfd;
-	stru
-	struct socaddr_in serveraddr;
+	int clientfd, port, size, bufSize;
+	char *host, buf[MAXLINE], uri[MAXLINE], version[MAXLINE];
+	rio_t rio;
+	char hostname[MAXLINE];
+	char pathname [MAXLINE];
 
-	parse_uri(&clientaddr, hostname, pathname, serverPort);  //call parse_uri to extract host name, path name, and port
+	Rio_readinitb(&rio, connfd); //connection to client for reading
+	bufSize = Rio_redlineb(&rio, buf, MAXLINE); //read from client
+	sscanf(buf, "%s %s %s", method, uri, version);  //scan input from client and extract method, uri, and version
 
-		//check URL against cached URL list
-		if() //if cached already
-		{
+	if(strcmp(method, "GET")) != 0)
+	{
+		printf("Invalid Method. \n");
+		return;
+	}
+
+	parse_uri(uri, hostname, pathname, &port);  //call parse_uri to extract host name, path name, and port
+
+	//check URL against cached URL list
+	if() //if cached already
+	{
 		
+	}
+	else //if not cached already
+	{
+		//if((clientfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) //open connection to end server
+		if((clientfd = Open_clientfd(hostname, port);
+			return -1; 
+		if(hostname == NULL)
+			return -2;
+		
+		//strcat(buf, "\n"); //add end line
+		//Rio_writen(clientfd, buf, bufSize+1);  //send client request to server
+
+		//printf("type:");
+		fflush(stdout);
+		while(Fgets(buf, MAXLINE, stdin) ! = NULL) { //read input line from client
+			size += strlen(buf);
+			Rio_writen(clientfd, buf, strlen(buf)); //send line to server
+			Rio_readlineb(&rio, buf, MAXLINE);  //receive line back from server
 		}
-		else //if not cached already
-		{
-			if((clientfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) //open connection to end server
-				return -1; 
-			if(hostname == NULL)
-			{
-				
-			}
-		}
+		Close(clientfd);
+
+		//write log entry to log file
+		format_log_entry(logstring, sockaddr, uri, size);
+	}
 }
 /*
  * parse_uri - URI parser
