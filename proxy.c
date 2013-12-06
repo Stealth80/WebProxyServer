@@ -17,9 +17,10 @@
  * Function prototypes
  */
 int parse_uri(char *uri, char *target_addr, char *path, int  *port);
-void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size, const char* cachedStatus);
+void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size, char* cachedStatus);
 int handle_request(int connfd, struct sockaddr_in *sockaddr);
-
+int checkIfCached();
+char status[36] = "";
 
 
 struct cachePage {
@@ -29,13 +30,12 @@ struct cachePage {
 };
 
 struct cachePage cachedPages[1024];
-int cachedPageCount = 0;
 int fileCount = 0;
+int isCached = -1;
 
 int port;
 rio_t rio;
 size_t n;
-int isCached = 0;
 char buf[MAXLINE], uri[MAXLINE], version[MAXLINE], method[MAXLINE];
 char hostname[MAXLINE];
 char pathname[MAXLINE];
@@ -44,7 +44,7 @@ int serverfd;
 const char* HOSTCACHED = "(HOSTNAME CACHED)";
 const char* PAGECACHED = "(PAGE CACHED)";
 const char* NOTFOUND = "(NOTFOUND)";
-const char* NOTCACHED = "";
+const char* NOTCACHED = "(ADDED TO CACHE)";
 
 /* 
  * main - Main routine for the proxy program 
@@ -83,15 +83,14 @@ int main(int argc, char **argv)
 		}
 
 		parse_uri(uri, hostname, pathname, &port);  //call parse_uri to extract host name, path name, and port
-		printf("method = %s, version = %s, uri: %s, hostname = %s, pathname = %s, port = %d", method, version, uri, hostname, pathname, port);
+		//printf("method = %s, version = %s, uri: %s, hostname = %s, pathname = %s, port = %d\n", method, version, uri, hostname, pathname, port);
 		if (fileCount == 1024) {
 			fileCount = 0;
 		}
-					
-		
-		
 
 		//check for cache
+		isCached = checkIfCached();
+		
 		if (hostname == NULL) {
 			//log error
 		}
@@ -102,6 +101,11 @@ int main(int argc, char **argv)
 
 			}
 			else { //connection was good
+				char fileCountAsChar[4];
+				sprintf(fileCountAsChar, "%d", fileCount);
+				strcpy(cachedPages[fileCount].cachedHostName, hostname);
+				strcpy(cachedPages[fileCount].cachedPathName, pathname);
+				strcpy(cachedPages[fileCount].filename, fileCountAsChar);
 				if (fork() == 0) { //if child
 					Close(listenfd); //close listen socket
 					if (handle_request(connfd, &clientaddr) < 0) //handle request
@@ -133,74 +137,86 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 	size_t m;
 	FILE *fp;
 	FILE *cachedfp;
-
-	
+	int cachedfd;
 
 	
 	//check URL against cached URL list
-	if(isCached) //if cached already
+	if(isCached > -1) //if cached already
 	{
-		
+		char fileLocationAsChar[4];
+		sprintf(fileLocationAsChar, "%d", isCached);
+		cachedfd = open(fileLocationAsChar, O_RDONLY);
+		if (cachedfd > -1)
+		{
+			strcpy(status, PAGECACHED);
+			printf("File %s was output from cache\n", fileLocationAsChar);
+			dup2(cachedfd, serverfd);
+		}
 	}
 	else //if not cached already
 	{
-		printf("File was not cached\n");
-		strcpy(cachedPages[fileCount].cachedHostName, hostname);
-		strcpy(cachedPages[fileCount].cachedPathName, pathname);
-		printf("%s, %s, %d\n", hostname, pathname, port);
-		//if((clientfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) //open connection to end server
-		
-		
+
 		Rio_writen(serverfd, buf, n);
 		Rio_writen(serverfd, "\n", 1);
 
 		Rio_readinitb(&rio, serverfd);
 		printf("Data received from server\n");
-		//strcat(buf, "\n"); //add end line
-		//Rio_writen(clientfd, buf, bufSize+1);  //send client request to server
-
-		//printf("type:");
-		//fflush(stdout);
-		//while(Fgets(buf, MAXLINE, stdin) ! = NULL) { //read input line from client
-		//	size += strlen(buf);
-		//	Rio_writen(clientfd, buf, strlen(buf)); //send line to server
-		//	Rio_readlineb(&rio, buf, MAXLINE);  //receive line back from server
-		//}
-		//fileCount hit end of array;
 
 		char fileCountAsChar[4];
 		sprintf(fileCountAsChar, "%d", fileCount);
-		printf("File name is %s\n", fileCountAsChar);
 		cachedfp = fopen(fileCountAsChar, "w");
-		while ((m = Rio_readn(serverfd, msg, MAXLINE)) > 0) {
-			printf("trying to write to file\n");
-			fprintf(cachedfp,"%s", msg);
-			printf("trying to write to client\n");
-			Rio_writen(connfd, msg, m);
-			/*sum the total number of bytes written */
-			bufSize += m;
-		}
-		fclose(cachedfp);
-		strcpy(cachedPages[fileCount].filename, fileCountAsChar);
+		strcpy(status, NOTCACHED);
 
-
-
-		//write log entry to log file
-		format_log_entry(logstring, sockaddr, uri, bufSize, NOTCACHED);
-		printf("%s\n",logstring);
-		fp = fopen("proxy.log", "a");
-		if (!fp) {
-			printf("Log not written!");
-		}
-		else {
-			fprintf(fp, "%s\n", logstring);
-			fclose(fp);
-		}
-
-		Close(serverfd);
 	}
+		
+	while ((m = Rio_readn(serverfd, msg, MAXLINE)) > 0) {
+		if (isCached < 0) {
+			//printf("trying to write to file\n");
+			fprintf(cachedfp, "%s", msg);
+		}
+		Rio_writen(connfd, msg, m);
+		/*sum the total number of bytes written */
+		bufSize += m;
+	}
+
+	if (isCached < 0) {
+		fclose(cachedfp);
+	}
+	else
+	{
+		Close(cachedfd);
+	}
+
+
+	//write log entry to log file
+	format_log_entry(logstring, sockaddr, uri, bufSize, status);
+	//printf("%s\n",logstring);
+	fp = fopen("proxy.log", "a");
+	if (!fp) {
+		printf("Log not written!");
+	}
+	else {
+		fprintf(fp, "%s\n", logstring);
+		fclose(fp);
+	}
+
+	Close(serverfd);
+	
 	return 0;
 }
+
+int checkIfCached() {
+	int index;
+	for (index = 0; index < fileCount; index++) {
+		if (!strcmp(cachedPages[index].cachedHostName, hostname)) {
+			if (!strcmp(cachedPages[index].cachedPathName, pathname)) {
+				return index;
+			}
+		}
+	}	
+	return -1;
+}
+
 /*
  * parse_uri - URI parser
  * 
@@ -254,7 +270,7 @@ int parse_uri(char *uri, char *hostname, char *pathname, int *port)
  * of the response from the server (size).
  */
 void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, 
-		      char *uri, int size, const char* cachedStatus)
+		      char *uri, int size, char* cachedStatus)
 {
     time_t now;
     char time_str[MAXLINE];
@@ -279,14 +295,9 @@ void format_log_entry(char *logstring, struct sockaddr_in *sockaddr,
 
 
     /* Return the formatted log entry string */
-	if(size < 1)
-	{
-		sprintf(logstring, "%s: %d.%d.%d.%d %s (NOTFOUND)", time_str, a, b, c, d, uri);
-	}
-	else
-	{
-		sprintf(logstring, "%s: %d.%d.%d.%d %s %d %s", time_str, a, b, c, d, uri, size, cachedStatus);
-	}
+
+	sprintf(logstring, "%s: %d.%d.%d.%d %s %d %s", time_str, a, b, c, d, uri, size, cachedStatus);
+	
 }
 
 
