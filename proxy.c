@@ -31,6 +31,16 @@ struct cachePage {
 struct cachePage cachedPages[1024];
 int cachedPageCount = 0;
 int fileCount = 0;
+
+int port;
+rio_t rio;
+size_t n;
+int isCached = 0;
+char buf[MAXLINE], uri[MAXLINE], version[MAXLINE], method[MAXLINE];
+char hostname[MAXLINE];
+char pathname[MAXLINE];
+int serverfd;
+
 const char* HOSTCACHED = "(HOSTNAME CACHED)";
 const char* PAGECACHED = "(PAGE CACHED)";
 const char* NOTFOUND = "(NOTFOUND)";
@@ -41,16 +51,15 @@ const char* NOTCACHED = "";
  */
 int main(int argc, char **argv)
 {     
-	int listenfd, connfd, port, clientlen; //listenfd for listening descriptor, connfd for connected descriptor
+	int listenfd, connfd, clientlen; //listenfd for listening descriptor, connfd for connected descriptor
 	struct sockaddr_in clientaddr;
 	struct hostent *hp;	//pointer to DNS host entry
 	char *haddrp;	//pointer to dotted decimal string
-	//unsigned short client_port;
 
     /* Check arguments */
     if (argc != 2) {
-	fprintf(stderr, "Usage: %s <port number>\n", argv[0]);
-	exit(0);
+		fprintf(stderr, "Usage: %s <port number>\n", argv[0]);
+		exit(0);
     }
 
 	port = atoi(argv[1]);  //listens on port passed on the command line
@@ -64,17 +73,50 @@ int main(int argc, char **argv)
 		printf("server connected to %s (%s)\n", hp->h_name, haddrp);
 		//client_port = ntohs(clientaddr.sin_port);
 
-		if(fork() == 0) { //if child
-			Close(listenfd); //close listen socket
-			if(handle_request(connfd, &clientaddr) < 0) //handle request
-			{
-				printf("Error Handling Request");
-			}
-			exit(0);  //on exit will close remaining fd and child ends
-		}
-		else  //if parent
+		Rio_readinitb(&rio, connfd); //connection to client for reading
+		n = Rio_readlineb(&rio, buf, MAXLINE); //read from client
+		sscanf(buf, "%s %s %s", method, uri, version);  //scan input from client and extract method, uri, and version
+
+		if (strcmp(method, "GET") != 0)
 		{
-			Close(connfd);  //close connection fd
+			printf("Invalid Method. \n");
+		}
+
+		parse_uri(uri, hostname, pathname, &port);  //call parse_uri to extract host name, path name, and port
+		printf("method = %s, version = %s, uri: %s, hostname = %s, pathname = %s, port = %d", method, version, uri, hostname, pathname, port);
+		if (fileCount == 1024) {
+			fileCount = 0;
+		}
+					
+		
+		
+
+		//check for cache
+		if (hostname == NULL) {
+			//log error
+		}
+		else {
+			if ((serverfd = Open_clientfd(hostname, port)) < 0)
+			{
+				printf("%d ", serverfd);
+
+			}
+			else { //connection was good
+				if (fork() == 0) { //if child
+					Close(listenfd); //close listen socket
+					if (handle_request(connfd, &clientaddr) < 0) //handle request
+					{
+						printf("Error Handling Request");
+					}
+					exit(0);  //on exit will close remaining fd and child ends
+				}
+				else  //if parent
+				{
+					Close(connfd);  //close connection fd
+					Close(serverfd);
+					fileCount++;
+				}
+			}
 		}
 	}
 
@@ -84,35 +126,19 @@ int main(int argc, char **argv)
 
 int handle_request(int connfd, struct sockaddr_in *sockaddr)
 {
-	int serverfd, port;
+	
 	int bufSize=0;
-	char buf[MAXLINE], uri[MAXLINE], version[MAXLINE], logstring[MAXLINE], method[MAXLINE];
-	rio_t rio;
-	char hostname[MAXLINE];
-	char pathname [MAXLINE];
-	char msg [MAXLINE];
-	size_t m, n;
+	char logstring[MAXLINE];
+	char msg[MAXLINE];
+	size_t m;
 	FILE *fp;
 	FILE *cachedfp;
 
-	if (fileCount == 1024) {
-		fileCount = 0;
-	}
+	
 
-	Rio_readinitb(&rio, connfd); //connection to client for reading
-	n = Rio_readlineb(&rio, buf, MAXLINE); //read from client
-	sscanf(buf, "%s %s %s", method, uri, version);  //scan input from client and extract method, uri, and version
-
-	if(strcmp(method, "GET") != 0)
-	{
-		printf("Invalid Method. \n");
-		return -3;
-	}
-
-	parse_uri(uri, hostname, pathname, &port);  //call parse_uri to extract host name, path name, and port
-	printf("method = %s, version = %s, uri: %s, hostname = %s, pathname = %s, port = %d", method, version, uri, hostname, pathname, port);
+	
 	//check URL against cached URL list
-	if(0) //if cached already
+	if(isCached) //if cached already
 	{
 		
 	}
@@ -121,14 +147,9 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 		printf("File was not cached\n");
 		strcpy(cachedPages[fileCount].cachedHostName, hostname);
 		strcpy(cachedPages[fileCount].cachedPathName, pathname);
+		printf("%s, %s, %d\n", hostname, pathname, port);
 		//if((clientfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) //open connection to end server
-		if((serverfd = Open_clientfd(hostname, port)) < 0)
-		{
-			printf("%d ", serverfd);
-			return -1; 
-		}
-		if(hostname == NULL)
-			return -2;
+		
 		
 		Rio_writen(serverfd, buf, n);
 		Rio_writen(serverfd, "\n", 1);
