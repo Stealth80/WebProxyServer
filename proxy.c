@@ -84,7 +84,7 @@ int main(int argc, char **argv)
 
 int handle_request(int connfd, struct sockaddr_in *sockaddr)
 {
-	int clientfd, port;
+	int serverfd, port;
 	int bufSize=0;
 	char buf[MAXLINE], uri[MAXLINE], version[MAXLINE], logstring[MAXLINE], method[MAXLINE];
 	rio_t rio;
@@ -122,18 +122,18 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 		strcpy(cachedPages[fileCount].cachedHostName, hostname);
 		strcpy(cachedPages[fileCount].cachedPathName, pathname);
 		//if((clientfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) //open connection to end server
-		if((clientfd = Open_clientfd(hostname, port)) < 0)
+		if((serverfd = Open_clientfd(hostname, port)) < 0)
 		{
-			printf("%d ", clientfd);
+			printf("%d ", serverfd);
 			return -1; 
 		}
 		if(hostname == NULL)
 			return -2;
 		
-		Rio_writen(clientfd, buf, n);
-		Rio_writen(clientfd, "\n", 1);
+		Rio_writen(serverfd, buf, n);
+		Rio_writen(serverfd, "\n", 1);
 
-		Rio_readinitb(&rio, clientfd);
+		Rio_readinitb(&rio, serverfd);
 		printf("Data received from server\n");
 		//strcat(buf, "\n"); //add end line
 		//Rio_writen(clientfd, buf, bufSize+1);  //send client request to server
@@ -151,7 +151,7 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 		sprintf(fileCountAsChar, "%d", fileCount);
 		printf("File name is %s\n", fileCountAsChar);
 		cachedfp = fopen(fileCountAsChar, "w");
-		while ((m = Rio_readn(clientfd, msg, MAXLINE)) > 0) {
+		while ((m = Rio_readn(serverfd, msg, MAXLINE)) > 0) {
 			printf("trying to write to file\n");
 			fprintf(cachedfp,"%s", msg);
 			printf("trying to write to client\n");
@@ -176,7 +176,7 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 			fclose(fp);
 		}
 
-		Close(clientfd);
+		Close(serverfd);
 	}
 	return 0;
 }
@@ -264,7 +264,7 @@ void format_log_entry(char *logstring, struct sockaddr_in *sockaddr,
 	}
 	else
 	{
-		sprintf(logstring, "%s: %d.%d.%d.%d %s %d, %s", time_str, a, b, c, d, uri, size, cachedStatus);
+		sprintf(logstring, "%s: %d.%d.%d.%d %s %d %s", time_str, a, b, c, d, uri, size, cachedStatus);
 	}
 }
 
