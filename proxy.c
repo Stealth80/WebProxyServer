@@ -20,7 +20,7 @@ int parse_uri(char *uri, char *target_addr, char *path, int  *port);
 void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size, char* cachedStatus);
 int handle_request(int connfd, struct sockaddr_in *sockaddr);
 int checkIfCached();
-char status[36] = "";
+void sigchld_handler(int sig);
 
 
 struct cachePage {
@@ -40,6 +40,7 @@ char buf[MAXLINE], uri[MAXLINE], version[MAXLINE], method[MAXLINE];
 char hostname[MAXLINE];
 char pathname[MAXLINE];
 int serverfd;
+char status[36] = "";
 
 const char* HOSTCACHED = "(HOSTNAME CACHED)";
 const char* PAGECACHED = "(PAGE CACHED)";
@@ -63,6 +64,7 @@ int main(int argc, char **argv)
     }
 
 	port = atoi(argv[1]);  //listens on port passed on the command line
+	Signal(SIGCHLD, sigchld_handler);
 	listenfd = Open_listenfd(port);   //listening descriptor
 
 	while(1) {
@@ -76,12 +78,11 @@ int main(int argc, char **argv)
 
 		Rio_readinitb(&rio, connfd); //connection to client for reading, creates a read buffer
 		n = Rio_readlineb(&rio, buf, MAXLINE); //read from client
-		printf("Client asked for this: %s\n", buf);
 		sscanf(buf, "%s %s %s", method, uri, version);  //scan input from client and extract method, uri, and version
 
 		if (strcmp(method, "GET") != 0)
 		{
-			printf("Invalid Method. \n");
+			printf("%s is not a valid method. \n", method);
 		}
 		else {
 			parse_uri(uri, hostname, pathname, &port);  //call parse_uri to extract host name, path name, and port
@@ -110,6 +111,7 @@ int main(int argc, char **argv)
 					strcpy(cachedPages[fileCount].filename, fileCountAsChar);
 					if (fork() == 0) { //if child
 						Close(listenfd); //close listen socket
+					
 						if (handle_request(connfd, &clientaddr) < 0) //handle request
 						{
 							printf("Error Handling Request");
@@ -224,6 +226,12 @@ int checkIfCached() {
 		}
 	}	
 	return -1;
+}
+
+void sigchld_handler(int sig) {
+	while (waitpid(-1, 0, WNOHANG) > 0)
+		;
+	return;
 }
 
 /*
