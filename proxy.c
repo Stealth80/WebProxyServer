@@ -68,57 +68,60 @@ int main(int argc, char **argv)
 	while(1) {
 		clientlen = sizeof(clientaddr);
 		connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
-		hp = Gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-		haddrp = inet_ntoa(clientaddr.sin_addr);
-		printf("server connected to %s (%s)\n", hp->h_name, haddrp);
+
+		//hp = Gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
+		//haddrp = inet_ntoa(clientaddr.sin_addr);
+		//printf("server connected to %s (%s)\n", hp->h_name, haddrp);
 		//client_port = ntohs(clientaddr.sin_port);
 
-		Rio_readinitb(&rio, connfd); //connection to client for reading
+		Rio_readinitb(&rio, connfd); //connection to client for reading, creates a read buffer
 		n = Rio_readlineb(&rio, buf, MAXLINE); //read from client
+		printf("Client asked for this: %s\n", buf);
 		sscanf(buf, "%s %s %s", method, uri, version);  //scan input from client and extract method, uri, and version
 
 		if (strcmp(method, "GET") != 0)
 		{
 			printf("Invalid Method. \n");
 		}
-
-		parse_uri(uri, hostname, pathname, &port);  //call parse_uri to extract host name, path name, and port
-		//printf("method = %s, version = %s, uri: %s, hostname = %s, pathname = %s, port = %d\n", method, version, uri, hostname, pathname, port);
-		if (fileCount == 1024) {
-			fileCount = 0;
-		}
-
-		//check for cache
-		isCached = checkIfCached();
-		
-		if (hostname == NULL) {
-			//log error
-		}
 		else {
-			if ((serverfd = Open_clientfd(hostname, port)) < 0)
-			{
-				printf("%d ", serverfd);
-
+			parse_uri(uri, hostname, pathname, &port);  //call parse_uri to extract host name, path name, and port
+			//printf("method = %s, version = %s, uri: %s, hostname = %s, pathname = %s, port = %d\n", method, version, uri, hostname, pathname, port);
+			if (fileCount == 1024) {
+				fileCount = 0;
 			}
-			else { //connection was good
-				char fileCountAsChar[4];
-				sprintf(fileCountAsChar, "%d", fileCount);
-				strcpy(cachedPages[fileCount].cachedHostName, hostname);
-				strcpy(cachedPages[fileCount].cachedPathName, pathname);
-				strcpy(cachedPages[fileCount].filename, fileCountAsChar);
-				if (fork() == 0) { //if child
-					Close(listenfd); //close listen socket
-					if (handle_request(connfd, &clientaddr) < 0) //handle request
-					{
-						printf("Error Handling Request");
-					}
-					exit(0);  //on exit will close remaining fd and child ends
-				}
-				else  //if parent
+
+			//check for cache
+			isCached = checkIfCached();
+
+			if (hostname == NULL) {
+				printf("Invalid host name.\n");
+			}
+			else {
+				if ((serverfd = Open_clientfd(hostname, port)) < 0)
 				{
-					Close(connfd);  //close connection fd
-					Close(serverfd);
-					fileCount++;
+					printf("%d ", serverfd);
+
+				}
+				else { //connection was good
+					char fileCountAsChar[4];
+					sprintf(fileCountAsChar, "%d", fileCount);
+					strcpy(cachedPages[fileCount].cachedHostName, hostname);
+					strcpy(cachedPages[fileCount].cachedPathName, pathname);
+					strcpy(cachedPages[fileCount].filename, fileCountAsChar);
+					if (fork() == 0) { //if child
+						Close(listenfd); //close listen socket
+						if (handle_request(connfd, &clientaddr) < 0) //handle request
+						{
+							printf("Error Handling Request");
+						}
+						exit(0);  //on exit will close remaining fd and child ends
+					}
+					else  //if parent
+					{
+						Close(connfd);  //close connection fd
+						Close(serverfd);
+						fileCount++;
+					}
 				}
 			}
 		}
@@ -155,8 +158,14 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 	}
 	else //if not cached already
 	{
+		char serverRequestLine1[MAXLINE];
+		char serverRequestLine2[MAXLINE];
 
-		Rio_writen(serverfd, buf, n);
+		sprintf(serverRequestLine1, "GET /%s HTTP/1.1\n", pathname);
+		sprintf(serverRequestLine2, "Host:%s\n", hostname);
+
+		Rio_writen(serverfd, serverRequestLine1, strlen(serverRequestLine1));
+		Rio_writen(serverfd, serverRequestLine2, strlen(serverRequestLine2));
 		Rio_writen(serverfd, "\n", 1);
 
 		Rio_readinitb(&rio, serverfd);
