@@ -19,8 +19,10 @@
 int parse_uri(char *uri, char *target_addr, char *path, int  *port);
 void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size, char* cachedStatus);
 int handle_request(int connfd, struct sockaddr_in *sockaddr);
-int checkIfCached();
+int checkIfPageCached();
 void sigchld_handler(int sig);
+int Openclientfd(char *hostname, int port);
+int openclientfd(char *hostname, int port);
 
 
 struct cachePage {
@@ -31,7 +33,8 @@ struct cachePage {
 
 struct cachePage cachedPages[1024];
 int fileCount = 0;
-int isCached = -1;
+int isPageCached = -1;
+int isIPCached = -1;
 
 int port;
 rio_t rio;
@@ -54,8 +57,6 @@ int main(int argc, char **argv)
 {     
 	int listenfd, connfd, clientlen; //listenfd for listening descriptor, connfd for connected descriptor
 	struct sockaddr_in clientaddr;
-	struct hostent *hp;	//pointer to DNS host entry
-	char *haddrp;	//pointer to dotted decimal string
 
     /* Check arguments */
     if (argc != 2) {
@@ -70,11 +71,6 @@ int main(int argc, char **argv)
 	while(1) {
 		clientlen = sizeof(clientaddr);
 		connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
-
-		//hp = Gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-		//haddrp = inet_ntoa(clientaddr.sin_addr);
-		//printf("server connected to %s (%s)\n", hp->h_name, haddrp);
-		//client_port = ntohs(clientaddr.sin_port);
 
 		Rio_readinitb(&rio, connfd); //connection to client for reading, creates a read buffer
 		n = Rio_readlineb(&rio, buf, MAXLINE); //read from client
@@ -92,13 +88,13 @@ int main(int argc, char **argv)
 			}
 
 			//check for cache
-			isCached = checkIfCached();
+			isPageCached = checkIfPageCached();
 
 			if (hostname == NULL) {
 				printf("Invalid host name.\n");
 			}
 			else {
-				if ((serverfd = Open_clientfd(hostname, port)) < 0)
+				if ((serverfd = Openclientfd(hostname, port)) < 0)
 				{
 					printf("%d ", serverfd);
 
@@ -146,14 +142,19 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 
 	
 	//check URL against cached URL list
-	if(isCached > -1) //if cached already
+	if(isPageCached > -1) //if cached already
 	{
 		char fileLocationAsChar[4];
-		sprintf(fileLocationAsChar, "%d", isCached);
+		sprintf(fileLocationAsChar, "%d", isPageCached);
 		cachedfd = open(fileLocationAsChar, O_RDONLY);
 		if (cachedfd > -1)
 		{
-			strcpy(status, PAGECACHED);
+			if (strlen(status) == 0) {
+				strcpy(status, PAGECACHED);
+			}
+			else {
+				strcat(status, PAGECACHED);
+			}
 			printf("File %s was output from cache\n", fileLocationAsChar);
 			dup2(cachedfd, serverfd);
 		}
@@ -176,12 +177,17 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 		char fileCountAsChar[4];
 		sprintf(fileCountAsChar, "%d", fileCount);
 		cachedfp = fopen(fileCountAsChar, "w");
-		strcpy(status, NOTCACHED);
+		if (strlen(status) == 0) {
+			strcpy(status, NOTCACHED);
+		}
+		else {
+			strcat(status, NOTCACHED);
+		}
 
 	}
 		
 	while ((m = Rio_readn(serverfd, msg, MAXLINE)) > 0) {
-		if (isCached < 0) {
+		if (isPageCached < 0) {
 			//printf("trying to write to file\n");
 			fprintf(cachedfp, "%s", msg);
 		}
@@ -190,7 +196,7 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 		bufSize += m;
 	}
 
-	if (isCached < 0) {
+	if (isPageCached < 0) {
 		fclose(cachedfp);
 	}
 	else
@@ -216,7 +222,7 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 	return 0;
 }
 
-int checkIfCached() {
+int checkIfPageCached() {
 	int index;
 	for (index = 0; index < fileCount; index++) {
 		if (!strcmp(cachedPages[index].cachedHostName, hostname)) {
@@ -228,10 +234,53 @@ int checkIfCached() {
 	return -1;
 }
 
+int checkIfIPCcached() {
+	return -1;
+}
+
 void sigchld_handler(int sig) {
 	while (waitpid(-1, 0, WNOHANG) > 0)
 		;
 	return;
+}
+
+
+
+int openclientfd(char *hostname, int port)
+{
+	int clientfd;
+	struct hostent *hp;
+	struct sockaddr_in serveraddr;
+
+	if ((clientfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+		return -1; /* check errno for cause of error */
+
+	/* Fill in the server's IP address and port */
+	if ((hp = gethostbyname(hostname)) == NULL)
+		return -2; /* check h_errno for cause of error */
+	bzero((char *)&serveraddr, sizeof(serveraddr));
+	serveraddr.sin_family = AF_INET;
+	bcopy((char *)hp->h_addr_list[0],
+		(char *)&serveraddr.sin_addr.s_addr, hp->h_length);
+	serveraddr.sin_port = htons(port);
+
+	/* Establish a connection with the server */
+	if (connect(clientfd, (SA *)&serveraddr, sizeof(serveraddr)) < 0)
+		return -1;
+	return clientfd;
+}
+
+int Openclientfd(char *hostname, int port)
+{
+	int rc;
+
+	if ((rc = open_clientfd(hostname, port)) < 0) {
+		if (rc == -1)
+			unix_error("Open_clientfd Unix error");
+		else
+			dns_error("Open_clientfd DNS error");
+	}
+	return rc;
 }
 
 /*
