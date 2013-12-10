@@ -17,13 +17,18 @@
  * Function prototypes
  */
 int parse_uri(char *uri, char *target_addr, char *path, int  *port);
-void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size, char* cachedStatus);
+void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size, char* pageCachedStatus);
 int handle_request(int connfd, struct sockaddr_in *sockaddr);
 int checkIfPageCached();
+int checkIfIPCached(char* hostname);
 void sigchld_handler(int sig);
 int Openclientfd(char *hostname, int port);
 int openclientfd(char *hostname, int port);
 
+struct DNSCache {
+	char hostName[MAXLINE];
+	struct hostent *hp;
+};
 
 struct cachePage {
 	char cachedHostName[MAXLINE];
@@ -31,9 +36,11 @@ struct cachePage {
 	char filename[1024];
 };
 
+struct DNSCache DNSCaches[1024];
 struct cachePage cachedPages[1024];
 int fileCount = 0;
 int isPageCached = -1;
+int hostsCached = 0;
 int isIPCached = -1;
 
 int port;
@@ -234,7 +241,14 @@ int checkIfPageCached() {
 	return -1;
 }
 
-int checkIfIPCcached() {
+int checkIfIPCached(char* hostname) {
+	int i;
+	for (i = 0; i < hostsCached; i++) {
+		if (strcmp(hostname, DNSCaches[i].hostName) == 0) {
+			isIPCached = 1;
+			return i;
+		}
+	}
 	return -1;
 }
 
@@ -254,10 +268,21 @@ int openclientfd(char *hostname, int port)
 
 	if ((clientfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 		return -1; /* check errno for cause of error */
-
-	/* Fill in the server's IP address and port */
-	if ((hp = gethostbyname(hostname)) == NULL)
-		return -2; /* check h_errno for cause of error */
+	int cachedIPLocation = checkIfIPCached(hostname);
+	if (cachedIPLocation > -1) {
+		hp = DNSCaches[cachedIPLocation].hp;
+		printf("DNS was found in cache\n");
+	}
+	else {
+		/* Fill in the server's IP address and port */
+		if ((hp = gethostbyname(hostname)) == NULL) {
+			return -2; /* check h_errno for cause of error */
+		}
+		hostsCached++;
+		strcpy(DNSCaches[hostsCached].hostName, hostname);
+		DNSCaches[hostsCached].hp = hp;
+		printf("DNS was added to cache\n");
+	}
 	bzero((char *)&serveraddr, sizeof(serveraddr));
 	serveraddr.sin_family = AF_INET;
 	bcopy((char *)hp->h_addr_list[0],
@@ -274,7 +299,7 @@ int Openclientfd(char *hostname, int port)
 {
 	int rc;
 
-	if ((rc = open_clientfd(hostname, port)) < 0) {
+	if ((rc = openclientfd(hostname, port)) < 0) {
 		if (rc == -1)
 			unix_error("Open_clientfd Unix error");
 		else
@@ -336,7 +361,7 @@ int parse_uri(char *uri, char *hostname, char *pathname, int *port)
  * of the response from the server (size).
  */
 void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, 
-		      char *uri, int size, char* cachedStatus)
+		      char *uri, int size, char* pageCachedStatus)
 {
     time_t now;
     char time_str[MAXLINE];
@@ -359,10 +384,19 @@ void format_log_entry(char *logstring, struct sockaddr_in *sockaddr,
     c = (host >> 8) & 0xff;
     d = host & 0xff;
 
+	const char* DNSCachedStatus;
+
+	if (isIPCached > -1) {
+		DNSCachedStatus = HOSTCACHED;
+	}
+	else {
+		DNSCachedStatus = "";
+	}
+
 
     /* Return the formatted log entry string */
 
-	sprintf(logstring, "%s: %d.%d.%d.%d %s %d %s", time_str, a, b, c, d, uri, size, cachedStatus);
+	sprintf(logstring, "%s: %d.%d.%d.%d %s %d %s %s", time_str, a, b, c, d, uri, size, DNSCachedStatus, pageCachedStatus);
 	
 }
 
