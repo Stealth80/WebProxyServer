@@ -12,24 +12,17 @@
 
 #include "csapp.h"
 #include "stdio.h"
-#include "time.h" //for time-out detection
 
 /*
  * Function prototypes
  */
 int parse_uri(char *uri, char *target_addr, char *path, int  *port);
-void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size, char* pageCachedStatus);
+void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, char *uri, int size, char* cachedStatus);
 int handle_request(int connfd, struct sockaddr_in *sockaddr);
-int checkIfPageCached();
-int checkIfIPCached(char* hostname);
+int checkIfCached();
 void sigchld_handler(int sig);
-int Openclientfd(char *hostname, int port);
-int openclientfd(char *hostname, int port);
+//char status[36] = "";
 
-struct DNSCache {
-	char hostName[MAXLINE];
-	struct hostent *hp;
-};
 
 struct cachePage {
 	char cachedHostName[MAXLINE];
@@ -37,12 +30,9 @@ struct cachePage {
 	char filename[1024];
 };
 
-struct DNSCache DNSCaches[1024];
 struct cachePage cachedPages[1024];
 int fileCount = 0;
-int isPageCached = -1;
-int hostsCached = 0;
-int isIPCached = -1;
+int isCached = -1;
 
 int port;
 rio_t rio;
@@ -65,6 +55,9 @@ int main(int argc, char **argv)
 {     
 	int listenfd, connfd, clientlen; //listenfd for listening descriptor, connfd for connected descriptor
 	struct sockaddr_in clientaddr;
+	struct hostent *hp;	//pointer to DNS host entry
+	char *haddrp;	//pointer to dotted decimal string
+	char logstring[MAXLINE];
 
     /* Check arguments */
     if (argc != 2) {
@@ -78,37 +71,63 @@ int main(int argc, char **argv)
 
 	while(1) {
 		clientlen = sizeof(clientaddr);
-		connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);   //Accept connection, returns connection file descriptor
+		connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
+
+		//hp = Gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
+		//haddrp = inet_ntoa(clientaddr.sin_addr);
+		//printf("server connected to %s (%s)\n", hp->h_name, haddrp);
+		//client_port = ntohs(clientaddr.sin_port);
 
 		Rio_readinitb(&rio, connfd); //connection to client for reading, creates a read buffer
 		n = Rio_readlineb(&rio, buf, MAXLINE); //read from client
 		sscanf(buf, "%s %s %s", method, uri, version);  //scan input from client and extract method, uri, and version
 
-		if (strcmp(method, "GET") != 0) //if method is not GET, return error for invalid method
+		if (strcmp(method, "GET") != 0)
 		{
+<<<<<<< HEAD
 			printf("%s is not a valid method. \n", method);
 		}
 		else {
 			parse_uri(uri, hostname, pathname, &port);  //call parse_uri to extract host name, path name, and port
 			//printf("method = %s, version = %s, uri: %s, hostname = %s, pathname = %s, port = %d\n", method, version, uri, hostname, pathname, port);
-			if (fileCount == 1024) {      //max filecount is 1024.  So if file count reaches 1024, reset filecount to zero
+			if (fileCount == 1024) {
 				fileCount = 0;
 			}
 
 			//check for cache
-			isPageCached = checkIfPageCached();
+			isCached = checkIfCached();
 
 			if (hostname == NULL) {
 				printf("Invalid host name.\n");
+=======
+			printf("Invalid Method. \n");
+		}
+
+		parse_uri(uri, hostname, pathname, &port);  //call parse_uri to extract host name, path name, and port
+		//printf("method = %s, version = %s, uri: %s, hostname = %s, pathname = %s, port = %d\n", method, version, uri, hostname, pathname, port);
+		if (fileCount == 1024) {
+			fileCount = 0;
+		}
+
+		//check for cache
+		isCached = checkIfCached();
+		
+		if (hostname == NULL) {
+			//log error
+			format_log_entry(logstring, sockaddr, uri, " ", NOTFOUND);
+		}
+		else {
+			if ((serverfd = Open_clientfd(hostname, port)) < 0)
+			{
+				printf("%d ", serverfd);
+				format_log_entry(logstring, sockaddr, uri, , NOTFOUND);
+>>>>>>> added log entry
 			}
 			else {
-				if ((serverfd = Openclientfd(hostname, port)) < 0) //if Openclient  returns less than 0, then host was not found
+				if ((serverfd = Open_clientfd(hostname, port)) < 0)
 				{
-					char logstring[MAXLINE];
 					printf("%d ", serverfd);
-					strcpy(status, NOTFOUND);
-					//write to log file
-					format_log_entry(logstring, &clientaddr, uri, 0, status);
+
 				}
 				else { //connection was good
 					char fileCountAsChar[4];
@@ -150,24 +169,17 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 	FILE *fp;
 	FILE *cachedfp;
 	int cachedfd;
-	time_t start;
-	time_t current;
-	double time_difference=0;
+
 	
 	//check URL against cached URL list
-	if(isPageCached > -1) //if cached already
+	if(isCached > -1) //if cached already
 	{
 		char fileLocationAsChar[4];
-		sprintf(fileLocationAsChar, "%d", isPageCached);
+		sprintf(fileLocationAsChar, "%d", isCached);
 		cachedfd = open(fileLocationAsChar, O_RDONLY);
 		if (cachedfd > -1)
 		{
-			if (strlen(status) == 0) {
-				strcpy(status, PAGECACHED);
-			}
-			else {
-				strcat(status, PAGECACHED);
-			}
+			strcpy(status, PAGECACHED);
 			printf("File %s was output from cache\n", fileLocationAsChar);
 			dup2(cachedfd, serverfd);
 		}
@@ -182,6 +194,7 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 
 		Rio_writen(serverfd, serverRequestLine1, strlen(serverRequestLine1));
 		Rio_writen(serverfd, serverRequestLine2, strlen(serverRequestLine2));
+		//Rio_writen(serverfd, buf, n);
 		Rio_writen(serverfd, "\n", 1);
 
 		Rio_readinitb(&rio, serverfd);
@@ -190,27 +203,12 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 		char fileCountAsChar[4];
 		sprintf(fileCountAsChar, "%d", fileCount);
 		cachedfp = fopen(fileCountAsChar, "w");
-		if (strlen(status) == 0) {
-			strcpy(status, NOTCACHED);
-		}
-		else {
-			strcat(status, NOTCACHED);
-		}
+		strcpy(status, NOTCACHED);
 
 	}
 		
-	start = time(NULL);
-	while ((m = Rio_readn(serverfd, msg, MAXLINE)) > 0) {  //while reading in
-		current = time(NULL);								
-		time_difference = difftime(current, start);		//check for time-out
-		if(time_difference > 90)
-		{
-
-			printf("Page timed out. \n");
-			strcat(status , " -- TIMED OUT");
-			break;
-		}
-		if (isPageCached < 0) {
+	while ((m = Rio_readn(serverfd, msg, MAXLINE)) > 0) {
+		if (isCached < 0) {
 			//printf("trying to write to file\n");
 			fprintf(cachedfp, "%s", msg);
 		}
@@ -219,7 +217,7 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 		bufSize += m;
 	}
 
-	if (isPageCached < 0) {
+	if (isCached < 0) {
 		fclose(cachedfp);
 	}
 	else
@@ -245,8 +243,7 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 	return 0;
 }
 
-//checkIfPageCached  sorts through all cached files and checks pathname and hostname for a match
-int checkIfPageCached() { 
+int checkIfCached() {
 	int index;
 	for (index = 0; index < fileCount; index++) {
 		if (!strcmp(cachedPages[index].cachedHostName, hostname)) {
@@ -258,74 +255,10 @@ int checkIfPageCached() {
 	return -1;
 }
 
-//checkIfIPCached iterates through DNS caches to see if hostname has been cached in DNS
-int checkIfIPCached(char* hostname) {
-	int i;
-	for (i = 0; i < hostsCached; i++) {
-		if (strcmp(hostname, DNSCaches[i].hostName) == 0) {
-			isIPCached = 1;
-			return i;
-		}
-	}
-	return -1;
-}
-
-//sigchld handler handles defunct children 
 void sigchld_handler(int sig) {
 	while (waitpid(-1, 0, WNOHANG) > 0)
 		;
 	return;
-}
-
-
-//Openclientfd is passed hostname and port, checks if was stored in cache, and if not, 
-//caches it and then connects to the server 
-int openclientfd(char *hostname, int port)
-{
-	int clientfd;
-	struct hostent *hp;
-	struct sockaddr_in serveraddr;
-
-	if ((clientfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-		return -1; /* check errno for cause of error */
-	int cachedIPLocation = checkIfIPCached(hostname);  //check if IP cached
-	if (cachedIPLocation > -1) {  //if found, set hostent to cached DNS
-		hp = DNSCaches[cachedIPLocation].hp;
-		printf("DNS was found in cache\n");
-	}
-	else {
-		/* Fill in the server's IP address and port */
-		if ((hp = gethostbyname(hostname)) == NULL) {
-			return -2; /* check h_errno for cause of error */
-		}
-		hostsCached++;
-		strcpy(DNSCaches[hostsCached].hostName, hostname);
-		DNSCaches[hostsCached].hp = hp;
-		printf("DNS was added to cache\n");
-	}
-	bzero((char *)&serveraddr, sizeof(serveraddr));
-	serveraddr.sin_family = AF_INET;
-	bcopy((char *)hp->h_addr_list[0],
-		(char *)&serveraddr.sin_addr.s_addr, hp->h_length);
-	serveraddr.sin_port = htons(port);
-
-	/* Establish a connection with the server */
-	if (connect(clientfd, (SA *)&serveraddr, sizeof(serveraddr)) < 0)
-		return -1;
-	return clientfd;
-}
-
-int Openclientfd(char *hostname, int port)
-{
-	int rc;
-
-	if ((rc = openclientfd(hostname, port)) < 0) {
-		if (rc == -1)
-			unix_error("Open_clientfd Unix error");
-		else
-			dns_error("Open_clientfd DNS error");
-	}
-	return rc;
 }
 
 /*
@@ -381,7 +314,7 @@ int parse_uri(char *uri, char *hostname, char *pathname, int *port)
  * of the response from the server (size).
  */
 void format_log_entry(char *logstring, struct sockaddr_in *sockaddr, 
-		      char *uri, int size, char* pageCachedStatus)
+		      char *uri, int size, char* cachedStatus)
 {
     time_t now;
     char time_str[MAXLINE];
@@ -404,19 +337,10 @@ void format_log_entry(char *logstring, struct sockaddr_in *sockaddr,
     c = (host >> 8) & 0xff;
     d = host & 0xff;
 
-	const char* DNSCachedStatus;
-
-	if (isIPCached > -1) {
-		DNSCachedStatus = HOSTCACHED;
-	}
-	else {
-		DNSCachedStatus = "";
-	}
-
 
     /* Return the formatted log entry string */
 
-	sprintf(logstring, "%s: %d.%d.%d.%d %s %d %s %s", time_str, a, b, c, d, uri, size, DNSCachedStatus, pageCachedStatus);
+	sprintf(logstring, "%s: %d.%d.%d.%d %s %d %s", time_str, a, b, c, d, uri, size, cachedStatus);
 	
 }
 
