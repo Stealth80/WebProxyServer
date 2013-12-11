@@ -25,6 +25,7 @@ int checkIfIPCached(char* hostname);
 void sigchld_handler(int sig);
 int Openclientfd(char *hostname, int port);
 int openclientfd(char *hostname, int port);
+int checkFileLength();
 
 struct DNSCache {
 	char hostName[MAXLINE];
@@ -152,9 +153,15 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 	time_t start;
 	time_t current;
 	double time_difference=0;
-	
+	int fileGood = -1;
+
+	if (isPageCached > -1) {
+		fileGood = checkFileLength();
+		printf("File was zero length\n");
+	}
+
 	//check URL against cached URL list
-	if(isPageCached > -1) //if cached already
+	if(fileGood > -1) //if cached already
 	{
 		char fileLocationAsChar[4];
 		sprintf(fileLocationAsChar, "%d", isPageCached);
@@ -175,12 +182,15 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 	{
 		char serverRequestLine1[MAXLINE];
 		char serverRequestLine2[MAXLINE];
+		char serverRequestLine3[MAXLINE];
 
 		sprintf(serverRequestLine1, "GET /%s HTTP/1.1\n", pathname);
 		sprintf(serverRequestLine2, "Host:%s\n", hostname);
+		sprintf(serverRequestLine3, "Connection: close\n");
 
 		Write(serverfd, serverRequestLine1, strlen(serverRequestLine1));
 		Write(serverfd, serverRequestLine2, strlen(serverRequestLine2));
+		Write(serverfd, serverRequestLine3, strlen(serverRequestLine3));
 		Write(serverfd, "\n", 1);
 
 		Rio_readinitb(&rio, serverfd);
@@ -249,15 +259,16 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 
 //checkIfPageCached  sorts through all cached files and checks pathname and hostname for a match
 int checkIfPageCached() { 
+	int fileLocation = -1;
 	int index;
 	for (index = 0; index < fileCount; index++) {
 		if (!strcmp(cachedPages[index].cachedHostName, hostname)) {
 			if (!strcmp(cachedPages[index].cachedPathName, pathname)) {
-				return index;
+				fileLocation = index;
 			}
 		}
 	}	
-	return -1;
+	return fileLocation;
 }
 
 //checkIfIPCached iterates through DNS caches to see if hostname has been cached in DNS
@@ -290,6 +301,14 @@ int openclientfd(char *hostname, int port)
 
 	if ((clientfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 		return -1; /* check errno for cause of error */
+
+	struct timeval timeout;
+	timeout.tv_sec = 10;
+	timeout.tv_usec = 0;
+
+	if (setsockopt(clientfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
+		sizeof(timeout)) < 0)
+		printf("setsockopt failed\n");
 	int cachedIPLocation = checkIfIPCached(hostname);  //check if IP cached
 	if (cachedIPLocation > -1) {  //if found, set hostent to cached DNS
 		hp = DNSCaches[cachedIPLocation].hp;
@@ -420,6 +439,23 @@ void format_log_entry(char *logstring, struct sockaddr_in *sockaddr,
 
 	sprintf(logstring, "%s: %d.%d.%d.%d %s %d %s %s", time_str, a, b, c, d, uri, size, DNSCachedStatus, pageCachedStatus);
 	
+}
+
+int checkFileLength() {
+
+	FILE *filePtr;
+	int fileSize;
+
+	filePtr = fopen(cachedPages[isPageCached].filename, "r");
+	//read to end of file
+	fseek(filePtr, 0, SEEK_END);
+	//find length of file
+	fileSize = ftell(filePtr);
+	//move file pointer back to beginning
+	rewind(filePtr);
+	fclose(filePtr);
+	return fileSize > 0 ? fileSize : -1;
+
 }
 
 
