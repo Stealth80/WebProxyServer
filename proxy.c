@@ -3,7 +3,7 @@
  *
  * TEAM MEMBERS: 
  *     Nick Hollis, nick.hollis@uky.edu 
- *     Josh Tuschl, student2@cs.uky.edu 
+ *     Josh Tuschl, jatu228@uky.edu 
  * 
  * IMPORTANT: Give a high level description of your code here. You
  * must also provide a header comment at the beginning of each
@@ -105,7 +105,6 @@ int main(int argc, char **argv)
 				if ((serverfd = Openclientfd(hostname, port)) < 0) //if Openclient  returns less than 0, then host was not found
 				{
 					char logstring[MAXLINE];
-					printf("%d ", serverfd);
 					strcpy(status, NOTFOUND);
 					//write to log file
 					format_log_entry(logstring, &clientaddr, uri, 0, status);
@@ -180,9 +179,9 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 		sprintf(serverRequestLine1, "GET /%s HTTP/1.1\n", pathname);
 		sprintf(serverRequestLine2, "Host:%s\n", hostname);
 
-		Rio_writen(serverfd, serverRequestLine1, strlen(serverRequestLine1));
-		Rio_writen(serverfd, serverRequestLine2, strlen(serverRequestLine2));
-		Rio_writen(serverfd, "\n", 1);
+		Write(serverfd, serverRequestLine1, strlen(serverRequestLine1));
+		Write(serverfd, serverRequestLine2, strlen(serverRequestLine2));
+		Write(serverfd, "\n", 1);
 
 		Rio_readinitb(&rio, serverfd);
 		printf("Data received from server\n");
@@ -200,7 +199,9 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 	}
 		
 	start = time(NULL);
-	while ((m = Rio_readn(serverfd, msg, MAXLINE)) > 0) {  //while reading in
+	m = 1;
+	while (m > 0) {  //while reading in
+		m = Read(serverfd, msg, MAXLINE);
 		current = time(NULL);								
 		time_difference = difftime(current, start);		//check for time-out
 		if(time_difference > 90)
@@ -214,7 +215,7 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 			//printf("trying to write to file\n");
 			fprintf(cachedfp, "%s", msg);
 		}
-		Rio_writen(connfd, msg, m);
+		Write(connfd, msg, m);
 		/*sum the total number of bytes written */
 		bufSize += m;
 	}
