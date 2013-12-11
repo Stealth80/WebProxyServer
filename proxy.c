@@ -227,6 +227,7 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 	{
 		Close(cachedfd);
 	}
+	Close(connfd);
 
 
 	//write log entry to log file
