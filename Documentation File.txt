@@ -1,1 +1,38 @@
-This program is a Web Proxy Server...
+Per our assignment:
+     This program is a Web Proxy Server that acts as a middleman
+     between a web browser and an end serverr. Instead of contacting 
+     the end server directly to get a Web page, the browser contacts 
+     the proxy, which checks for cached DNS and cached page files and
+     if not found, forwards the request on to the end server.  When 
+     the end server replies to the proxy, the proxy sends the reply 
+     on to the browser. If it is found, it sends back the cached page
+     instead.
+     
+This is a web proxy that, in main, listens for connections 
+and if connection request is found, accepts connection, scans 
+input from client and checks method.  This proxy only accepts 
+GET requests, others are invalid methods and will get a resource 
+temporarily unavailable custom message.  If it is a GET method, 
+then proxy proceeds.  It then parses the uri so it can extract 
+the host name and checks if the page and DNS are cached yet or 
+not, forks and child then passes it off to handle_request.  
+Parent keeps listening for connections.
+
+handle_request checks if main found the page was cached or not.
+If it was, then it sends the cached page to client.  If not, it
+requests page from server and caches page.  Then closes all 
+connections and calls format_log_entry to write to the log.  Log
+entries note the time, date, host name, size, DNS cached status 
+and page cached status to a file called "proxy.log"
+
+Limitations:  Our proxy cannot handle https websites at this time.
+		Images also load slowly.
+
+Features:  The proxy also uses a custom openclientfd that has the 
+	   same attributes as the given open_fclientfd and 
+           Open_clientfd and has added functionality for caching 
+	   and uses a socket option for checking for time-outs.  
+	   Our proxy also has a sigchld_handler to deal with 
+	   defunct children.  In addition, our proxy sends a 
+	   generic error 400 message for invalid methods as well 
+	   when an unsupported request is made.

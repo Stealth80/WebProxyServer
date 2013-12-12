@@ -38,8 +38,8 @@ struct cachePage {
 	char filename[1024];
 };
 
-struct DNSCache DNSCaches[1024];
-struct cachePage cachedPages[1024];
+struct DNSCache DNSCaches[1024];		//array to hold DNS caches
+struct cachePage cachedPages[1024];		//array to hold page caches
 int fileCount = 0;
 int isPageCached = -1;
 int hostsCached = 0;
@@ -54,13 +54,21 @@ char pathname[MAXLINE];
 int serverfd;
 char status[36] = "";
 
-const char* HOSTCACHED = "(HOSTNAME CACHED)";
+//Constants for Log Entries
+const char* HOSTCACHED = "(HOSTNAME CACHED)";	
 const char* PAGECACHED = "(PAGE CACHED)";
 const char* NOTFOUND = "(NOTFOUND)";
 const char* NOTCACHED = "(ADDED TO CACHE)";
 
 /* 
  * main - Main routine for the proxy program 
+ * listens for connections and if connection request is found,
+ * accepts connection, scans input from client and checks method.
+ * This proxy only accepts GET requests, others are invalid methods.
+ * It then parses the uri so it can extract the host name and 
+ * checks if the page and DNS are cached yet or not, forks and 
+ * child then passes it off to handle_request.  Parent keeps 
+ * listening for connections.
  */
 int main(int argc, char **argv)
 {     
@@ -86,12 +94,13 @@ int main(int argc, char **argv)
 		sscanf(buf, "%s %s %s", method, uri, version);  //scan input from client and extract method, uri, and version
 		if (strcmp(method, "GET") != 0) //if method is not GET, return error for invalid method
 		{
-			printf("%s is not a valid method. \n", method);
+			printf("%s is not a valid method. \n", method);  //prints to server 
 			char outputLine1[MAXLINE]; 
 			char outputLine2[MAXLINE]; 
 			char outputLine3[MAXLINE];
 
-			sprintf(outputLine1, "HTTP/1.1 400 OK\n");
+			//error message to send out connection fd for invalid method
+			sprintf(outputLine1, "HTTP/1.1 400 OK\n");   
 			sprintf(outputLine2, "Content-Type: text/html; charset=ISO-8859-1\n");
 			sprintf(outputLine3, "Connection: close\n\n");
 
@@ -108,10 +117,10 @@ int main(int argc, char **argv)
 				fileCount = 0;
 			}
 
-			//check for cache
+			//check if page is cached
 			isPageCached = checkIfPageCached();
 
-			if (hostname == NULL) {
+			if (hostname == NULL) {   //if host null, then print invalid to server 
 				printf("Invalid host name.\n");
 			}
 			else {
@@ -140,8 +149,8 @@ int main(int argc, char **argv)
 					else  //if parent
 					{
 						Close(connfd);  //close connection fd
-						Close(serverfd);
-						fileCount++;
+						Close(serverfd);  //close server fd
+						fileCount++; //increase file count
 					}
 				}
 			}
@@ -151,10 +160,13 @@ int main(int argc, char **argv)
     exit(0);   //should never get here
 }
 
-
+/* handle_request checks if main found the page was cached or not.
+ * if it was, then it sends cached page to client.  If not, requests 
+ * page from server and caches page.  Then closes all connections
+ * and calls format_log_entry to write to the log.
+ */
 int handle_request(int connfd, struct sockaddr_in *sockaddr)
 {
-	
 	int bufSize=0;
 	char logstring[MAXLINE];
 	char msg[MAXLINE];
@@ -167,50 +179,50 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 	double time_difference=0;
 	int fileGood = -1;
 
-	if (isPageCached > -1) {
-		fileGood = checkFileLength();
-		printf("File was zero length\n");
+	if (isPageCached > -1) {  //checks if page is cached (assigned in main)
+		fileGood = checkFileLength();  //checks file length
 	}
 
-	//check URL against cached URL list
-	if(fileGood > -1) //if cached already
+	//if file is good and length not zero, then send cached page
+	if(fileGood > -1) 
 	{
 		char fileLocationAsChar[4];
 		sprintf(fileLocationAsChar, "%d", isPageCached);
-		cachedfd = open(fileLocationAsChar, O_RDONLY);
+		cachedfd = open(fileLocationAsChar, O_RDONLY);  
 		if (cachedfd > -1)
 		{
-			if (strlen(status) == 0) {
+			if (strlen(status) == 0) {  
 				strcpy(status, PAGECACHED);
 			}
 			else {
 				strcat(status, PAGECACHED);
 			}
 			printf("File %s was output from cache\n", fileLocationAsChar);
-			dup2(cachedfd, serverfd);
+			dup2(cachedfd, serverfd);  
 		}
 	}
-	else //if not cached already
+	else //if not cached
 	{
 		char serverRequestLine1[MAXLINE];
 		char serverRequestLine2[MAXLINE];
 		char serverRequestLine3[MAXLINE];
 		char serverRequestLine4[MAXLINE];
 
+		//prep request
 		sprintf(serverRequestLine1, "%s /%s HTTP/1.1\n", method, pathname);
 		sprintf(serverRequestLine2, "Host:%s\n", hostname);
 		sprintf(serverRequestLine3, "Connection: close\n");
 		sprintf(serverRequestLine4, "User-Agent: Mozilla / 5.0 (Windows NT 6.1; WOW64; rv:25.0) Gecko / 20100101 Firefox / 25.0\n");
 
-
+		//send request by line
 		Write(serverfd, serverRequestLine1, strlen(serverRequestLine1));
 		Write(serverfd, serverRequestLine2, strlen(serverRequestLine2));
 		Write(serverfd, serverRequestLine3, strlen(serverRequestLine3));
 		Write(serverfd, serverRequestLine4, strlen(serverRequestLine4));
 		Write(serverfd, "\n", 1);
 
-		Rio_readinitb(&rio, serverfd);
-		printf("Data received from server\n");
+		Rio_readinitb(&rio, serverfd);  //get initialb using Rio function
+		printf("Data received from server\n");  //print to server
 
 		char fileCountAsChar[4];
 		sprintf(fileCountAsChar, "%d", fileCount);
@@ -225,20 +237,19 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 	}
 		
 	start = time(NULL);
-	m = 1;
-	while (m > 0) {  //while reading in
+	m = 1; //start m at 1 for first read
+	while (m > 0) {										//while reading in
 		m = Read(serverfd, msg, MAXLINE);
 		current = time(NULL);								
 		time_difference = difftime(current, start);		//check for time-out
-		if(time_difference > 90)
-		{
-
-			printf("Page timed out. \n");
-			strcat(status , " -- TIMED OUT");
-			break;
+		if(time_difference > 200)
+		{                                      //if times out, then
+			printf("Page timed out. \n");	   //print to server
+			strcat(status , " -- TIMED OUT");  //append timed out to log entry
+			break;							   //exit loop
 		}
-		if (isPageCached < 0) {
-			//printf("trying to write to file\n");
+		//check if page is cached, if so use cached page fp
+		if (isPageCached < 0) {                         
 			fprintf(cachedfp, "%s", msg);
 		}
 		Write(connfd, msg, m);
@@ -246,29 +257,29 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 		bufSize += m;
 	}
 
-	if (isPageCached < 0) {
+	if (isPageCached < 0) { //if page is cached, close cached page fd
 		fclose(cachedfp);
 	}
 	else
 	{
-		Close(cachedfd);
+		Close(cachedfd);    //otherwise close fd
 	}
-	Close(connfd);
+	Close(connfd); //close connectoin fd
 
 
 	//write log entry to log file
 	format_log_entry(logstring, sockaddr, uri, bufSize, status);
 	//printf("%s\n",logstring);
 	fp = fopen("proxy.log", "a");
-	if (!fp) {
-		printf("Log not written!");
+	if (!fp) {                     //check log opens properly
+		printf("Log not written!"); //if not print to server
 	}
 	else {
-		fprintf(fp, "%s\n", logstring);
+		fprintf(fp, "%s\n", logstring);   //otherwise write to log
 		fclose(fp);
 	}
 
-	Close(serverfd);
+	Close(serverfd);  //close server fd
 	
 	return 0;
 }
@@ -351,6 +362,8 @@ int openclientfd(char *hostname, int port)
 	return clientfd;
 }
 
+//Openclientfd uses openclientfd to open client fd and report error 
+//if unsuccessful and returns openclientfd result
 int Openclientfd(char *hostname, int port)
 {
 	int rc;
