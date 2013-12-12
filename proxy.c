@@ -84,10 +84,22 @@ int main(int argc, char **argv)
 		Rio_readinitb(&rio, connfd); //connection to client for reading, creates a read buffer
 		n = Rio_readlineb(&rio, buf, MAXLINE); //read from client
 		sscanf(buf, "%s %s %s", method, uri, version);  //scan input from client and extract method, uri, and version
-
 		if (strcmp(method, "GET") != 0) //if method is not GET, return error for invalid method
 		{
 			printf("%s is not a valid method. \n", method);
+			char outputLine1[MAXLINE]; 
+			char outputLine2[MAXLINE]; 
+			char outputLine3[MAXLINE];
+
+			sprintf(outputLine1, "HTTP/1.1 400 OK\n");
+			sprintf(outputLine2, "Content-Type: text/html; charset=ISO-8859-1\n");
+			sprintf(outputLine3, "Connection: close\n\n");
+
+			Write(connfd, outputLine1, strlen(outputLine1));
+			Write(connfd, outputLine2, strlen(outputLine2));
+			Write(connfd, outputLine3, strlen(outputLine3));
+
+			Close(connfd);
 		}
 		else {
 			parse_uri(uri, hostname, pathname, &port);  //call parse_uri to extract host name, path name, and port
@@ -183,14 +195,18 @@ int handle_request(int connfd, struct sockaddr_in *sockaddr)
 		char serverRequestLine1[MAXLINE];
 		char serverRequestLine2[MAXLINE];
 		char serverRequestLine3[MAXLINE];
+		char serverRequestLine4[MAXLINE];
 
-		sprintf(serverRequestLine1, "GET /%s HTTP/1.1\n", pathname);
+		sprintf(serverRequestLine1, "%s /%s HTTP/1.1\n", method, pathname);
 		sprintf(serverRequestLine2, "Host:%s\n", hostname);
 		sprintf(serverRequestLine3, "Connection: close\n");
+		sprintf(serverRequestLine4, "User-Agent: Mozilla / 5.0 (Windows NT 6.1; WOW64; rv:25.0) Gecko / 20100101 Firefox / 25.0\n");
+
 
 		Write(serverfd, serverRequestLine1, strlen(serverRequestLine1));
 		Write(serverfd, serverRequestLine2, strlen(serverRequestLine2));
 		Write(serverfd, serverRequestLine3, strlen(serverRequestLine3));
+		Write(serverfd, serverRequestLine4, strlen(serverRequestLine4));
 		Write(serverfd, "\n", 1);
 
 		Rio_readinitb(&rio, serverfd);
@@ -326,8 +342,7 @@ int openclientfd(char *hostname, int port)
 	}
 	bzero((char *)&serveraddr, sizeof(serveraddr));
 	serveraddr.sin_family = AF_INET;
-	bcopy((char *)hp->h_addr_list[0],
-		(char *)&serveraddr.sin_addr.s_addr, hp->h_length);
+	bcopy((char *)hp->h_addr_list[0],(char *)&serveraddr.sin_addr.s_addr, hp->h_length);
 	serveraddr.sin_port = htons(port);
 
 	/* Establish a connection with the server */
